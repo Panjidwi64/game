@@ -1,205 +1,181 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>3D Promo Run — Stickman</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8">
+  <title>3D Game First Person</title>
   <style>
-    html, body { margin:0; height:100%; overflow:hidden; background:#0f1115; }
-    #hint { position:fixed; left:12px; bottom:12px; color:#fff; font:14px/1.4 system-ui, sans-serif; opacity:0.8; }
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-family: monospace;
+      font-size: 14px;
+      background: rgba(0,0,0,0.5);
+      padding: 5px 10px;
+      border-radius: 6px;
+    }
+    #startBtn {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 15px 30px;
+      font-size: 20px;
+      cursor: pointer;
+      border: none;
+      border-radius: 8px;
+      background: #00ffcc;
+    }
   </style>
 </head>
 <body>
-  <!-- video promo disembunyikan; harus muted agar autoplay lancar -->
-  <video id="promo" src="promo.mp4" loop muted playsinline style="display:none"></video>
-  <div id="hint">W / ↑ : Maju • A/D : Geser kiri/kanan • Space : Pause/Play Video</div>
+  <div id="hud">
+    Klik "Start Game" → gunakan Mouse untuk lihat sekitar, WASD / Panah untuk bergerak, Spasi = Play/Pause Video
+  </div>
+  <button id="startBtn">Start Game</button>
 
-  <!-- Pakai Three.js module + GLTFLoader dari CDN -->
-  <script type="module">
-    import * as THREE from "https://unpkg.com/three@0.155.0/build/three.module.js";
-    import { GLTFLoader } from "https://unpkg.com/three@0.155.0/examples/jsm/loaders/GLTFLoader.js";
+  <!-- Three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
 
-    // --- Scene / Camera / Renderer
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x121419);
+  <script>
+    let scene, camera, renderer, controls;
+    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+    let velocity = new THREE.Vector3();
+    let direction = new THREE.Vector3();
+    let canJump = false;
+    let videoPlaying = true;
 
-    const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias:true });
-    renderer.setSize(innerWidth, innerHeight);
-    renderer.shadowMap.enabled = true;
-    document.body.appendChild(renderer.domElement);
+    init();
+    animate();
 
-    // --- Lights
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x202020, 1.1);
-    scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
-    dir.position.set(5, 10, 5);
-    dir.castShadow = true;
-    scene.add(dir);
+    function init(){
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
 
-    // --- Ground (lintasan)
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(12, 400),
-      new THREE.MeshStandardMaterial({ color: 0x2b2f3a, metalness:0.0, roughness:1.0 })
-    );
-    ground.rotation.x = -Math.PI/2;
-    ground.receiveShadow = true;
-    scene.add(ground);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
 
-    // --- Garis marka jalan
-    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    for (let i = 0; i < 25; i++) {
-      const mark = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 3), lineMat);
-      mark.rotation.x = -Math.PI/2;
-      mark.position.set(0, 0.01, -i * 15 - 10);
-      scene.add(mark);
+      // Lighting
+      const light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
+      scene.add(light);
+
+      // Ground
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(200, 200),
+        new THREE.MeshPhongMaterial({ color: 0x222222 })
+      );
+      ground.rotation.x = -Math.PI/2;
+      scene.add(ground);
+
+      // Video Walls
+      createVideoWall("video1.mp4", -15, -20);
+      createVideoWall("video2.mp4", 15, -20);
+
+      // Controls (Pointer Lock)
+      controls = new THREE.PointerLockControls(camera, document.body);
+
+      const startBtn = document.getElementById("startBtn");
+      startBtn.addEventListener("click", () => {
+        controls.lock();
+      });
+
+      controls.addEventListener("lock", () => {
+        startBtn.style.display = "none";
+      });
+
+      controls.addEventListener("unlock", () => {
+        startBtn.style.display = "block";
+      });
+
+      // Keyboard controls
+      document.addEventListener("keydown", onKeyDown);
+      document.addEventListener("keyup", onKeyUp);
+
+      window.addEventListener("resize", onWindowResize);
     }
 
-    // --- Video Billboard kiri-kanan
-    const video = document.getElementById("promo");
-    const videoTex = new THREE.VideoTexture(video);
-    const videoMat = new THREE.MeshBasicMaterial({ map: videoTex, side: THREE.DoubleSide });
+    function createVideoWall(src, x, z){
+      const video = document.createElement("video");
+      video.src = src;
+      video.loop = true;
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.play();
 
-    function addBillboard(x, z) {
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(10, 5.6), videoMat);
-      plane.position.set(x, 2.8, z);
-      plane.rotation.y = x > 0 ? -Math.PI/10 : Math.PI/10; // miring sedikit ke lintasan
-      plane.castShadow = false;
-      scene.add(plane);
-    }
-    for (let i = 0; i < 8; i++) {
-      const z = -i * 40 - 20;
-      addBillboard(7.5, z);
-      addBillboard(-7.5, z - 20);
-    }
+      const texture = new THREE.VideoTexture(video);
+      const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
 
-    // --- Stickman (GLTF) + Animation
-    const loader = new GLTFLoader();
-    let stick, mixer, walkAction;
-    let ready = false;
-
-    loader.load(
-      "./stickman.glb", // pastikan file ini ada
-      (gltf) => {
-        stick = gltf.scene;
-        stick.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-        // Skala & posisi awal
-        stick.scale.set(1.2, 1.2, 1.2);
-        stick.position.set(0, 0, 0);
-        scene.add(stick);
-
-        mixer = new THREE.AnimationMixer(stick);
-        // Ambil clip pertama atau clip bernama "Walk"
-        const clips = gltf.animations;
-        let clip = clips.find(c => /walk/i.test(c.name)) || clips[0];
-        walkAction = mixer.clipAction(clip);
-        walkAction.play();          // jalan default
-        walkAction.timeScale = 0;   // diam saat start
-        ready = true;
-      },
-      undefined,
-      (err) => {
-        console.error("Gagal load stickman.glb", err);
-        // fallback: capsule
-        const fallback = new THREE.Mesh(
-          new THREE.CapsuleGeometry(0.35, 1.2, 4, 8),
-          new THREE.MeshStandardMaterial({ color: 0x00ffcc })
-        );
-        fallback.position.set(0, 1, 0);
-        stick = new THREE.Group();
-        stick.add(fallback);
-        scene.add(stick);
-        ready = true;
-      }
-    );
-
-    // --- Input
-    const keys = {};
-    addEventListener("keydown", e => {
-      keys[e.code] = true;
-
-      // user gesture: coba play video saat tombol pertama kali ditekan
-      if (video.paused) video.play().catch(()=>{});
-      if (!video.muted && video.readyState < 3) video.muted = true;
-      if (!started) { started = true; clock.start(); }
-    });
-    addEventListener("keyup", e => keys[e.code] = false);
-
-    // Toggle video play/pause
-    addEventListener("keydown", e => {
-      if (e.code === "Space") {
-        if (video.paused) video.play().catch(()=>{});
-        else video.pause();
-      }
-    });
-
-    // --- Movement & Camera follow
-    const clock = new THREE.Clock(false);
-    let started = false;
-    let speedZ = 0;
-    const maxSpeed = 6;    // m/s kira-kira
-    const accel = 12;      // percepatan
-    const friction = 10;   // deselerasi
-    const strafeSpeed = 4; // geser kiri/kanan
-
-    function updateMovement(dt) {
-      // maju
-      if (keys["KeyW"] || keys["ArrowUp"]) {
-        speedZ = Math.min(maxSpeed, speedZ + accel * dt);
-      } else if (keys["KeyS"] || keys["ArrowDown"]) {
-        speedZ = Math.max(-maxSpeed/2, speedZ - accel * dt);
-      } else {
-        // gesek
-        if (speedZ > 0) speedZ = Math.max(0, speedZ - friction * dt);
-        else if (speedZ < 0) speedZ = Math.min(0, speedZ + friction * dt);
-      }
-
-      if (!stick) return;
-
-      // geser kiri/kanan
-      if (keys["KeyA"] || keys["ArrowLeft"]) {
-        stick.position.x = THREE.MathUtils.clamp(stick.position.x - strafeSpeed * dt, -3, 3);
-      }
-      if (keys["KeyD"] || keys["ArrowRight"]) {
-        stick.position.x = THREE.MathUtils.clamp(stick.position.x + strafeSpeed * dt, -3, 3);
-      }
-
-      // bergerak sepanjang lintasan ke -Z
-      stick.position.z -= speedZ * dt;
-
-      // anim speed sync: kalau diam, timeScale=0; makin cepat, makin besar
-      if (walkAction) {
-        const ts = Math.abs(speedZ) / (maxSpeed * 0.75); // skala wajar
-        walkAction.timeScale = ts;                       // 0 saat idle, ~1 saat lari sedang
-      }
-
-      // kamera follow di belakang
-      const camOffset = new THREE.Vector3(0, 2.2, 6);
-      const target = stick.position.clone();
-      camera.position.lerp(target.clone().add(camOffset), 0.15);
-      camera.lookAt(target.x, target.y + 1.2, target.z - 3);
+      const screen = new THREE.Mesh(new THREE.PlaneGeometry(16, 9), material);
+      screen.position.set(x, 4.5, z);
+      scene.add(screen);
     }
 
-    // --- Render loop
-    function animate() {
+    function onKeyDown(event){
+      switch(event.code){
+        case "ArrowUp":
+        case "KeyW": moveForward = true; break;
+        case "ArrowLeft":
+        case "KeyA": moveLeft = true; break;
+        case "ArrowDown":
+        case "KeyS": moveBackward = true; break;
+        case "ArrowRight":
+        case "KeyD": moveRight = true; break;
+        case "Space": 
+          videoPlaying = !videoPlaying;
+          document.querySelectorAll("video").forEach(v=>{
+            if(videoPlaying) v.play(); else v.pause();
+          });
+          break;
+      }
+    }
+
+    function onKeyUp(event){
+      switch(event.code){
+        case "ArrowUp":
+        case "KeyW": moveForward = false; break;
+        case "ArrowLeft":
+        case "KeyA": moveLeft = false; break;
+        case "ArrowDown":
+        case "KeyS": moveBackward = false; break;
+        case "ArrowRight":
+        case "KeyD": moveRight = false; break;
+      }
+    }
+
+    function onWindowResize(){
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate(){
       requestAnimationFrame(animate);
-      const dt = clock.getDelta();
 
-      if (ready) {
-        updateMovement(dt);
-        if (mixer) mixer.update(dt);
+      if(controls.isLocked){
+        const delta = 0.1;
+
+        velocity.x -= velocity.x * 0.1;
+        velocity.z -= velocity.z * 0.1;
+
+        direction.z = Number(moveForward) - Number(moveBackward);
+        direction.x = Number(moveRight) - Number(moveLeft);
+        direction.normalize();
+
+        if(moveForward || moveBackward) velocity.z -= direction.z * 0.2;
+        if(moveLeft || moveRight) velocity.x -= direction.x * 0.2;
+
+        controls.moveRight(-velocity.x * delta);
+        controls.moveForward(-velocity.z * delta);
       }
 
       renderer.render(scene, camera);
     }
-    animate();
-
-    // --- Resize
-    addEventListener("resize", () => {
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-    });
   </script>
 </body>
 </html>
