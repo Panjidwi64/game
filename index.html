@@ -1,166 +1,184 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>EthOS Arena</title>
+  <meta charset="UTF-8" />
+  <title>EthOS Arena (Fixed)</title>
   <style>
-    body { margin: 0; overflow: hidden; background: black; }
-    canvas { display: block; }
-    #instructions {
-      position: absolute;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: white;
-      font-family: sans-serif;
-      background: rgba(0,0,0,0.5);
-      padding: 8px 12px;
-      border-radius: 8px;
+    body { margin:0; overflow:hidden; background:#000; font-family:system-ui, sans-serif; }
+    #ui {
+      position:fixed; inset:auto 0 16px 0; text-align:center; color:#fff;
+      background:rgba(0,0,0,.35); padding:8px 12px; width:100%;
+    }
+    #start {
+      position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.6); z-index:10;
+    }
+    #start button {
+      padding:14px 22px; font-size:18px; border:0; border-radius:10px; cursor:pointer;
+      background:#4cc0ff; color:#001018; box-shadow:0 8px 24px rgba(0,200,255,.3);
     }
   </style>
 </head>
 <body>
-  <div id="instructions">
-    W/A/S/D: Gerak • Mouse: Lihat Sekitar • Spasi: Pause/Play Video
-  </div>
+  <div id="start"><button>Klik untuk Mulai</button></div>
+  <div id="ui">W/A/S/D untuk bergerak • Gerakkan mouse untuk melihat</div>
 
-  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.150.1/examples/js/controls/PointerLockControls.js"></script>
+  <!-- Three.js r128 (kompatibel dengan examples/js/* yang menempel ke THREE) -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
 
   <script>
     let scene, camera, renderer, controls;
-    let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-    const velocity = new THREE.Vector3();
-    const direction = new THREE.Vector3();
+    let moveF=false, moveB=false, moveL=false, moveR=false;
+    const speed = 6; // unit per detik
+    const clock = new THREE.Clock();
 
     init();
     animate();
 
-    function init() {
+    function init(){
       scene = new THREE.Scene();
 
-      // Kamera First Person
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+      // Background: logo EthOS
+      new THREE.TextureLoader().load("logo.png", tx => {
+        scene.background = tx;
+      });
 
-      // Renderer
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
+      // Camera & renderer
+      camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 2000);
+      camera.position.set(0, 2, 10);
+
+      renderer = new THREE.WebGLRenderer({ antialias:true });
+      renderer.setSize(innerWidth, innerHeight);
       document.body.appendChild(renderer.domElement);
 
-      // Background Logo EthOS
-      const loader = new THREE.TextureLoader();
-      loader.load("logo.png", function(texture){
-        scene.background = texture;
-      });
+      // Lights
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 0.9);
+      scene.add(hemi);
+      const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+      dir.position.set(10, 20, 10);
+      scene.add(dir);
 
-      // Lampu
-      const hemiLight = new THREE.HemisphereLight(0x99ccff, 0x222222, 1.0);
-      scene.add(hemiLight);
-      const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-      dirLight.position.set(5, 10, 7).normalize();
-      scene.add(dirLight);
-
-      // Track (jalan biru glowing)
-      const trackGeo = new THREE.PlaneGeometry(40, 500);
-      const trackMat = new THREE.MeshPhongMaterial({
-        color: 0x3366ff,
-        emissive: 0x112244,
-        shininess: 100
-      });
-      const track = new THREE.Mesh(trackGeo, trackMat);
+      // Track (jalur biru EthOS)
+      const track = new THREE.Mesh(
+        new THREE.PlaneGeometry(20, 400),
+        new THREE.MeshPhongMaterial({ color:0x2f73ff, emissive:0x0a2c66, shininess:120 })
+      );
       track.rotation.x = -Math.PI/2;
-      track.position.y = 0;
       scene.add(track);
 
-      // Pagar kiri-kanan (hologram transparan)
-      const fenceGeo = new THREE.BoxGeometry(1, 5, 500);
-      const fenceMat = new THREE.MeshPhongMaterial({
-        color: 0x66ccff,
-        transparent: true,
-        opacity: 0.4,
-        emissive: 0x2299ff
-      });
+      // Pagar kiri-kanan (hologram)
+      const fenceMat = new THREE.MeshPhongMaterial({ color:0x66ccff, emissive:0x1aa3ff, transparent:true, opacity:0.45 });
+      const fenceGeo = new THREE.BoxGeometry(0.8, 3.5, 400);
+      const leftFence  = new THREE.Mesh(fenceGeo, fenceMat); leftFence.position.set(-10.9, 1.75, 0); scene.add(leftFence);
+      const rightFence = new THREE.Mesh(fenceGeo, fenceMat); rightFence.position.set( 10.9, 1.75, 0); scene.add(rightFence);
 
-      const leftFence = new THREE.Mesh(fenceGeo, fenceMat);
-      leftFence.position.set(-20, 2.5, 0);
-      scene.add(leftFence);
+      // Garis tepi neon (glow tipis)
+      const edgeGeo = new THREE.BoxGeometry(0.2, 0.2, 400);
+      const edgeMat = new THREE.MeshPhongMaterial({ color:0x00e5ff, emissive:0x00e5ff });
+      const leftEdge  = new THREE.Mesh(edgeGeo, edgeMat);  leftEdge.position.set(-10, 0.02, 0);  scene.add(leftEdge);
+      const rightEdge = new THREE.Mesh(edgeGeo, edgeMat); rightEdge.position.set( 10, 0.02, 0); scene.add(rightEdge);
 
-      const rightFence = new THREE.Mesh(fenceGeo, fenceMat);
-      rightFence.position.set(20, 2.5, 0);
-      scene.add(rightFence);
-
-      // Dekorasi: Pilar bercahaya sepanjang lintasan
-      const pillarGeo = new THREE.CylinderGeometry(0.5, 0.5, 6, 16);
-      const pillarMat = new THREE.MeshPhongMaterial({
-        color: 0x00aaff,
-        emissive: 0x0077ff,
-        shininess: 200
-      });
-
-      for (let z = -200; z < 200; z += 40) {
-        const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
-        leftPillar.position.set(-22, 3, z);
-        scene.add(leftPillar);
-
-        const rightPillar = new THREE.Mesh(pillarGeo, pillarMat);
-        rightPillar.position.set(22, 3, z);
-        scene.add(rightPillar);
+      // Deretan video wall di sepanjang lintasan (di luar pagar, menghadap track)
+      for(let i=0;i<6;i++){
+        addVideoWall("video1.mp4", -14.5, -30 - i*60,  Math.PI/2);   // kiri
+        addVideoWall("video2.mp4",  14.5, -60 - i*60, -Math.PI/2);   // kanan
       }
 
-      // Kontrol Pointer Lock
+      // Finish banner
+      const finishCanvas = makeTextTexture("FINISH • EthOS", 512, 128);
+      const finish = new THREE.Mesh(
+        new THREE.PlaneGeometry(12, 3),
+        new THREE.MeshBasicMaterial({ map: finishCanvas, transparent:true })
+      );
+      finish.position.set(0, 3.2, -190);
+      scene.add(finish);
+
+      // Controls (Pointer Lock) — r128: gunakan THREE.PointerLockControls
       controls = new THREE.PointerLockControls(camera, document.body);
-      document.addEventListener('click', () => controls.lock());
+
+      const start = document.querySelector('#start');
+      start.addEventListener('click', () => controls.lock());
+      controls.addEventListener('lock', ()=> start.style.display='none');
+      controls.addEventListener('unlock', ()=> start.style.display='flex');
+
       scene.add(controls.getObject());
 
-      // Event Key
-      const onKeyDown = (e) => {
+      // Input
+      addEventListener('keydown', e=>{
         switch(e.code){
-          case 'KeyW': moveForward = true; break;
-          case 'KeyS': moveBackward = true; break;
-          case 'KeyA': moveLeft = true; break;
-          case 'KeyD': moveRight = true; break;
+          case 'KeyW': case 'ArrowUp':    moveF=true; break;
+          case 'KeyS': case 'ArrowDown':  moveB=true; break;
+          case 'KeyA': case 'ArrowLeft':  moveL=true; break;
+          case 'KeyD': case 'ArrowRight': moveR=true; break;
         }
-      };
-      const onKeyUp = (e) => {
+      });
+      addEventListener('keyup', e=>{
         switch(e.code){
-          case 'KeyW': moveForward = false; break;
-          case 'KeyS': moveBackward = false; break;
-          case 'KeyA': moveLeft = false; break;
-          case 'KeyD': moveRight = false; break;
+          case 'KeyW': case 'ArrowUp':    moveF=false; break;
+          case 'KeyS': case 'ArrowDown':  moveB=false; break;
+          case 'KeyA': case 'ArrowLeft':  moveL=false; break;
+          case 'KeyD': case 'ArrowRight': moveR=false; break;
         }
-      };
-      document.addEventListener('keydown', onKeyDown);
-      document.addEventListener('keyup', onKeyUp);
+      });
 
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth/window.innerHeight;
+      // Resize
+      addEventListener('resize', ()=>{
+        camera.aspect = innerWidth/innerHeight;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setSize(innerWidth, innerHeight);
       });
     }
 
-    function animate() {
+    function addVideoWall(src, x, z, rotY){
+      const vid = document.createElement('video');
+      vid.src = src;
+      vid.muted = true; vid.loop = true; vid.autoplay = true; vid.playsInline = true;
+      // Safari/WebKit kadang butuh play() setelah user gesture, tapi setelah pointer lock biasanya ok
+      vid.play().catch(()=>{ /* diam saja */ });
+
+      const tex = new THREE.VideoTexture(vid);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+      const wall = new THREE.Mesh(new THREE.PlaneGeometry(16, 9), mat);
+      wall.position.set(x, 4.5, z);
+      wall.rotation.y = rotY;
+      scene.add(wall);
+    }
+
+    function makeTextTexture(text, w, h){
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.fillRect(0,0,w,h);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 64px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(text, w/2, h/2);
+      const tex = new THREE.CanvasTexture(c);
+      return tex;
+    }
+
+    function animate(){
       requestAnimationFrame(animate);
+      const dt = clock.getDelta();
 
-      if (controls.isLocked) {
-        const delta = 0.1;
-        velocity.x -= velocity.x * 0.1;
-        velocity.z -= velocity.z * 0.1;
+      if(controls.isLocked){
+        // Gerak FPS berbasis waktu (lebih stabil)
+        const d = speed * dt;
+        if(moveF) controls.moveForward( d);
+        if(moveB) controls.moveForward(-d);
+        if(moveR) controls.moveRight(  d);
+        if(moveL) controls.moveRight( -d);
 
-        direction.z = Number(moveForward) - Number(moveBackward);
-        direction.x = Number(moveRight) - Number(moveLeft);
-        direction.normalize();
+        // Clamp di dalam pagar
+        const p = controls.getObject().position;
+        const limitX = 9.2; // sedikit di dalam garis tepi
+        if(p.x < -limitX) p.x = -limitX;
+        if(p.x >  limitX) p.x =  limitX;
 
-        if (moveForward || moveBackward) velocity.z -= direction.z * 0.2;
-        if (moveLeft || moveRight) velocity.x -= direction.x * 0.2;
-
-        controls.moveRight(-velocity.x * delta);
-        controls.moveForward(-velocity.z * delta);
-
-        // Collision pagar
-        const pos = controls.getObject().position;
-        if (pos.x > 18) pos.x = 18;
-        if (pos.x < -18) pos.x = -18;
+        // Batas depan/belakang supaya selalu di arena
+        const backLimit = 8, frontLimit = -195;
+        if(p.z > backLimit)  p.z = backLimit;
+        if(p.z < frontLimit) p.z = frontLimit;
       }
 
       renderer.render(scene, camera);
